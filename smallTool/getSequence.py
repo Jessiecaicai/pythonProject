@@ -63,7 +63,7 @@ def getSequenceInturnBio():
     '''
 
     count = 1
-    number = 50000
+    number = 90 #获取sequence条数
     resultFile = open('resultBioInturnSequence.fasta','w')
 
     for seq_record in SeqIO.parse('/home/guo/data/datacluster/uniref50/db/uniref50.fasta','fasta'):
@@ -76,6 +76,12 @@ def getSequenceInturnBio():
     resultFile.close()
 
 getSequenceInturnBio()
+
+def getSequenceRandomBio():
+    '''
+    bio解析+随机获取特定条数fasta文件里的sequence
+    :return:
+    '''
 
 
 

@@ -5,23 +5,21 @@
 import pandas as pd
 
 import numpy as np
-#
-# from gremlin import gremlinTest
-# from gremlin import gremlinMRF
-# from gremlin.gremlinTest import alphabet
-from  gremlin import gremlinTensorflow
+
+from gremlin import gremlinTest
+from gremlin import gremlinMRF
+from gremlin.gremlinTest import alphabet
 
 # parse fasta
-
 #names,seqs = gremlinTest.parse_fasta("gremlin/4FAZA.fas")
-#names,seqs = gremlinTest.parse_fasta("gremlin/query_0_aligned.faa")
-names,seqs = gremlinTensorflow.parse_fasta("gremlin/query_0.a3m")
+names,seqs = gremlinTest.parse_fasta("short3AlignedSequence.faa")
+
 
 # process input sequences
-msa = gremlinTensorflow.mk_msa(seqs)
+msa = gremlinTest.mk_msa(seqs)
 
-mrf = gremlinTensorflow.GREMLIN(msa)
+mrf = gremlinTest.GREMLIN(msa)
 
-mtx = gremlinTensorflow.get_mtx(mrf)
-gremlinTensorflow.plot_mtx(mtx)
+mtx = gremlinMRF.get_mtx(mrf)
+gremlinMRF.plot_mtx(mtx)
 

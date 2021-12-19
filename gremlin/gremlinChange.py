@@ -56,9 +56,9 @@ def parse_fasta(filename, limit=-1):
 
 def filt_gaps(msa, gap_cutoff=0.5):
     '''filters alignment to remove gappy positions'''
-    tmp = (msa == states - 1).astype(np.float64)
-    non_gaps = np.where(np.sum(tmp.T, -1).T / msa.shape[0] < gap_cutoff)[0]
-    return msa[:, non_gaps], non_gaps
+    tmp = (msa == states - 1).astype(np.float)
+    non_gaps = np.where(np.sum(tmp.T, -1).T / msa.shape[0] < gap_cutoff)[0] # msa.shape[0] = 3
+    return msa[:, non_gaps], non_gaps # msa, v_idx
 
 
 def get_eff(msa, eff_cutoff=0.8):
@@ -68,6 +68,7 @@ def get_eff(msa, eff_cutoff=0.8):
     # pairwise identity
     a = pdist(msa, "hamming")
     b = squareform(pdist(msa, "hamming"))
+    # msa_sm表示msa之间相似分数
     msa_sm = 1.0 - squareform(pdist(msa, "hamming"))
 
     # weight for each sequence
@@ -82,8 +83,8 @@ def mk_msa(seqs):
 
     msa_ori = []
     for seq in seqs:
-        msa_ori.append([aa2num(aa) for aa in seq])
-    msa_ori = np.array(msa_ori)
+        msa_ori.append([aa2num(aa) for aa in seq]) #获取氨基酸对应number————变成一个number list
+    msa_ori = np.array(msa_ori) #数字矩阵
 
     # msa_ori的维度是[num_seqs,seq_len]
     # remove positions with more than > 50% gaps
@@ -91,7 +92,6 @@ def mk_msa(seqs):
     msa_ori的维度是[num_seqs,seq_len]，eg [817,62]
     如果在某一列的gap的数量大于50%，就把这一列消去，eg 消去最后一列，维度变为[817,61]
     msa 是把之前的某一列gap的数量大于50%消去,其他和msa_ori没有区别
-    v_idx = [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23, 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47, 48 49 50 51 52 53 54 55 56 57 58 59 60]
     """
     msa, v_idx = filt_gaps(msa_ori, 0.5)
 
@@ -109,6 +109,7 @@ def mk_msa(seqs):
     num_seqs 序列长度，去除掉某一列的gap数量大于50%
     """
     ncol = msa.shape[1]  # length of sequence
+    # 转成氨基酸之间的关系
     w_idx = v_idx[np.stack(np.triu_indices(ncol, 1), -1)]
 
     return {"msa_ori": msa_ori,
@@ -345,7 +346,10 @@ if __name__ == '__main__':
     # ===============================================================================
     # parse fasta
 
-    names, seqs = parse("query_0.a3m")
+    # names, seqs = parse("query_0.a3m")
+
+    # parse_fasta使用的fasta文件是对齐好的序列文件
+    name, seqs = parse_fasta('short3AlignedSequence.faa')
 
     # process input sequences
     msa = mk_msa(seqs)
