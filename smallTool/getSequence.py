@@ -75,7 +75,7 @@ def getSequenceInturnBio():
 
     resultFile.close()
 
-getSequenceInturnBio()
+#getSequenceInturnBio()
 
 def getSequenceRandomBio():
     '''
@@ -97,6 +97,27 @@ def getSequencefromffdata():
 
 #getSequencefromffdata()
 
+def getSequencefromPPITxt():
+    '''
+    获得PPItxt格式文件里的sequence序列
+    :return:
+    '''
+    with open('/home/guo/data/zxb_data/finally_train.txt') as txt:
+    #with open('/home/guo/data/zxb_data/testSequence.txt') as txt:
+        txtData = txt.readlines()
+        #print(txtData)
 
+    i = 1
+    for sequence in txtData:
+        realSequence = sequence.split('\t')
+        num = len(realSequence)
+        j = 0
+        while j < 2:
+            resultFile = open('/home/guo/data/zxb_data/sequences/sequence{}-{}.fasta'.format(i, j), 'w')
+            resultFile.write(realSequence[j])
+            resultFile.close()
+            j += 1
+        i += 1
+    print("共计行数"+ str(i) )
 
-
+getSequencefromPPITxt()

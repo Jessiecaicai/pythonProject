@@ -1,9 +1,9 @@
 
 ## txt2fasta
-with open('/home/guo/data/sequenceDesign/twintowersUse12.6_100/12.txt') as txt:
+with open('50.txt') as txt:
     txtData = txt.readlines()
     #print(txtData)
-fastaFile = open('/home/guo/data/sequenceDesign/twintowersUse12.6_100/12.fasta','w')
+fastaFile = open('50.fasta','w')
 
 countInt = 0
 for sequence in txtData:
