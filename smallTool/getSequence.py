@@ -118,6 +118,6 @@ def getSequencefromPPITxt():
             resultFile.close()
             j += 1
         i += 1
-    print("共计行数"+ str(i) )
+    print("共计行数" + str(i))
 
-getSequencefromPPITxt()
+#getSequencefromPPITxt()
