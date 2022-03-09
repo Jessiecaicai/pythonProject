@@ -3,6 +3,7 @@ import os
 import argparse
 import numpy as np
 import torch
+from scipy.io.arff.tests.test_arffread import data_path
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
@@ -19,6 +20,10 @@ import torch.nn.functional as F
 import time
 import math
 
+#os.environ["RANK"] = "0"
+os.environ['MASTER_ADDR'] = 'localhost'
+os.environ['MASTER_PORT'] = '5678'
+#os.environ['WORLD_SIZE'] = '1'
 # DDP 多机多卡需要保证初始化的模型相同
 def init_seeds(SEED=1):
     torch.manual_seed(SEED)
@@ -43,6 +48,8 @@ def reduce_loss(value,average=True):
         return output_tensors
 
 # 1）多机多卡的初始化
+# 在调用任何其他方法之前，初始化该distributed包。可组织所有进程加入
+# backend 要使用的后端的名称
 torch.distributed.init_process_group(backend = 'nccl')
 
 # 2）从外边获得local_rank的参数，多机多卡的torch.distributed.launch会传给这个参数
@@ -55,7 +62,8 @@ args = param_esm1b.params_parser()
 # 3）设置cuda
 # local_rank = torch.distributed.get_rank()
 torch.cuda.set_device(args.local_rank)
-device = torch.device("cuda",args.local_rank)
+# device = torch.device("cuda",args.local_rank)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 if __name__ == '__main__':
     # 初始化参数
@@ -65,15 +73,22 @@ if __name__ == '__main__':
     Seed = 2021
     init_seeds(SEED=Seed)
     # 加载训练数据
-    train_dataset = loadingData.AllDataset()
-    train_sample = torch.utils.data.distributed.DistributedSampler(train_dataset)
-    train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=False, drop_last=True,
-                              collate_fn=train_dataset.collate__fn, sampler=train_sample)
+    # train_dataset = loadingData.AllDataset()
+    # train_sample = torch.utils.data.distributed.DistributedSampler(train_dataset)
+    # train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=False, drop_last=True,
+    #                           collate_fn=train_dataset.collate__fn, sampler=train_sample)
+    data_path = '/home/guo/pythonProject/chenlei/protein_representation_learning/data/downstream'
+    fluorescence_train_data = loadingData.datasetGetCL.FluorescenceDataset(data_path, 'train')
 
     # 初始化模型
     # args_model = param_esm1b.params_parser()
     esm1b_alphabet = esm.data.Alphabet.from_architecture(args.arch)
     model = esm.model.ProteinBertModel(args, esm1b_alphabet)
+    # Premodel = esm.model.ProteinBertModel(args, esm1b_alphabet)
+    # model = esm.model.SmallSampleContainProteinBertModel(Premodel)
+
+    # for name, parameters in model.named_parameters():
+    #     print(name, ':', parameters.size())
 
     model = model.to(device)
     criterion = nn.CrossEntropyLoss(ignore_index=-1)

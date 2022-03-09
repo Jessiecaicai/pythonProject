@@ -1,11 +1,14 @@
 # -*-coding:utf-8-*-
 import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '1, 2'
+
 import argparse
 import numpy as np
 import torch
 from apex.parallel.multiproc import world_size
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
+from torch.nn import DataParallel
 from torch.utils.data.distributed import DistributedSampler
 from apex.parallel import convert_syncbn_model
 import param_esm1b
@@ -22,10 +25,10 @@ import math
 # 把多机多卡改成单机多卡
 
 # os.environ["RANK"] = "0"
-os.environ['MASTER_ADDR'] = 'localhost'
-os.environ['MASTER_PORT'] = '5678'
+#os.environ['MASTER_ADDR'] = 'localhost'
+#os.environ['MASTER_PORT'] = '5678'
 # os.environ['WORLD_SIZE'] = '1'
-os.environ['CUDA_VISIBLE_DEVICES'] = '0, 2, 3'
+# gpus = [1, 2, 3]
 # DDP 多机多卡需要保证初始化的模型相同
 def init_seeds(SEED=1):
     torch.manual_seed(SEED)
@@ -49,8 +52,8 @@ def reduce_loss(value,average=True):
             output_tensors /= world_size
         return output_tensors
 
-# 1）多机多卡的初始化
-torch.distributed.init_process_group(backend = 'nccl', rank = 0, world_size = 1)
+# 1）单机多卡的初始化
+#torch.distributed.init_process_group(backend = 'nccl', rank = 0, world_size = 1)
 
 # 2）从外边获得local_rank的参数，多机多卡的torch.distributed.launch会传给这个参数
 '''parser = argparse.ArgumentParser()
@@ -61,9 +64,10 @@ args = param_esm1b.params_parser()
 
 # 3）设置cuda
 # local_rank = torch.distributed.get_rank()
-torch.cuda.set_device(args.local_rank)
+#torch.cuda.set_device(args.local_rank)
 # device = torch.device("cuda",args.local_rank)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# torch.cuda.set_device('cuda:{}'.format(gpus[0]))
 
 if __name__ == '__main__':
     # 初始化参数
@@ -73,34 +77,42 @@ if __name__ == '__main__':
     Seed = 2021
     init_seeds(SEED=Seed)
     # 加载训练数据
-    train_dataset = loadingData.AllDataset()
-    train_sample = torch.utils.data.distributed.DistributedSampler(train_dataset)
+    # train_dataset = loadingData.AllDataset()
+    # train_sample = torch.utils.data.distributed.DistributedSampler(train_dataset)
+    # train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=False, drop_last=True,
+    #                           collate_fn=train_dataset.collate__fn, sampler=train_sample)
+    data_path = '/home/guo/pythonProject/chenlei/protein_representation_learning/data/downstream'
+    train_dataset = loadingData.datasetGetCL.FluorescenceDataset(data_path, 'train')
+    #train_sample = torch.utils.data.distributed.DistributedSampler(train_dataset)
     train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=False, drop_last=True,
-                              collate_fn=train_dataset.collate__fn, sampler=train_sample)
+                              collate_fn=train_dataset.collate__fn)#, sampler=train_sample)
 
     # 初始化模型
     # args_model = param_esm1b.params_parser()
     esm1b_alphabet = esm.data.Alphabet.from_architecture(args.arch)
     model = esm.model.ProteinBertModel(args, esm1b_alphabet)
+    model = model.to(device)
+
+    # model= DataParallel(model, device_ids=gpus, output_device=gpus[0])
+    model = DataParallel(model)
     # Premodel = esm.model.ProteinBertModel(args, esm1b_alphabet)
     # model = esm.model.SmallSampleContainProteinBertModel(Premodel)
 
     # for name, parameters in model.named_parameters():
     #     print(name, ':', parameters.size())
 
-    model = model.to(device)
     criterion = nn.CrossEntropyLoss(ignore_index=-1)
 
-    model = convert_syncbn_model(model)         # 在使用nn.DistributedDataParallel时，用nn.SyncBatchNorm替换或包装nn.BatchNorm层。
+    #model = convert_syncbn_model(model)         # 在使用nn.DistributedDataParallel时，用nn.SyncBatchNorm替换或包装nn.BatchNorm层。
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    model, optimizer = amp.initialize(model, optimizer, opt_level='O2')
+    #model, optimizer = amp.initialize(model, optimizer, opt_level='O2')
 
-    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank], output_device=args.local_rank, find_unused_parameters=True)
+    #model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank], output_device=args.local_rank, find_unused_parameters=True)
     model.to(device)
 
     model.train()
     for epoch_item in range(epochs):
-        train_loader.sampler.set_epoch(epoch_item)
+        #train_loader.sampler.set_epoch(epoch_item)
         training_loss = 0
         training_step = 0
         training_step_out = 0
@@ -117,26 +129,31 @@ if __name__ == '__main__':
             training_step_out += 1
 
             optimizer.zero_grad()
-            with amp.scale_loss(loss,optimizer) as scaled_loss:
-                scaled_loss.backward()
+            #with amp.scale_loss(loss,optimizer) as scaled_loss:
+                #scaled_loss.backward()
+            loss.backward()
             optimizer.step()
-
-            if training_step_out % 1000 == 0:
-                training_loss /= training_step_out     # 迭代1000次的平均loss
-                reduceLOSS = reduce_loss(training_loss)
-                if args.local_rank == 0:               # 在每台机器上都输出loss
-                    print("Epoch: {}. \t Step: {} / {} finish. \t Training Loss: {:.5f}.".format(epoch_item, training_step, len(train_loader), reduceLOSS.item()))
-                if torch.distributed.get_rank() == 0:  # 在第一台机器的第一张卡上保存loss
-                    with open("../log/loss.txt","a+") as out_loss:
-                        out_loss.write("Epoch: {} \t Step: {} / {} finish. \t Average Loss (1000iter): {:.5f}.\n".format(epoch_item, training_step,len(train_loader),reduceLOSS.item()))
-                training_loss = 0
-                training_step_out = 0
+            #print(loss)
+            if training_step_out % 100 == 0:
+                training_loss /= training_step_out
+                print("Epoch: {}. \t Step: {} / {} finish. \t TrainingLoss: {}".format(epoch_item, training_step, len(train_loader), training_loss))
+            # if training_step_out % 1 == 0:
+            #     training_loss /= training_step_out     # 迭代1000次的平均loss
+            #     #reduceLOSS = reduce_loss(training_loss)
+            #     if args.local_rank == 0:               # 在每台机器上都输出loss
+            #         print("Epoch: {}. \t Step: {} / {} finish. \t Training Loss: {:.5f}.".format(epoch_item, training_step, len(train_loader))#, reduceLOSS.item()))
+            #     if torch.distributed.get_rank() == 0:  # 在第一台机器的第一张卡上保存loss
+            #         with open("../log/loss.txt","a+") as out_loss:
+            #             out_loss.write("Epoch: {} \t Step: {} / {} finish. \t Average Loss (1000iter): {:.5f}.\n".format(epoch_item, training_step,len(train_loader),reduceLOSS.item()))
+            #     training_loss = 0
+            #     training_step_out = 0
 
             if i % 20000 == 0:                         # 迭代20000次保存一次模型
-                if torch.distributed.get_rank() == 0:  # 在第一台机器的第一张卡上保存模型
+                #if torch.distributed.get_rank() == 0:  # 在第一台机器的第一张卡上保存模型
                 # if args.local_rank == 0:
-                    model_path = os.path.join("../model", "model_" + str(epoch_item) + "_" + str(i) + ".pkl")
-                    torch.save(model.module.state_dict(), model_path)
+                model_path = os.path.join(".", "model_" + str(epoch_item) + "_" + str(i) + ".pkl")
+                #torch.save(model.module.state_dict(), model_path)
+                torch.save(model.state_dict(), model_path)
 
 
 

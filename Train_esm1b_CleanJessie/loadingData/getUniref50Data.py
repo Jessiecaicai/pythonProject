@@ -1,61 +1,39 @@
 # -*-coding:utf-8-*-
-import argparse
-import numpy
-import torch
-import esm
-import numpy as np
-import torch.nn as nn
-import os
-from torch.utils.data import DataLoader
-from torch.utils.data import Dataset
 import random
-# from gpu_mem_track import MemTracker  # 引用显存跟踪代码
-import inspect
-import torch.utils.data as Data
-from torch.utils.data import DataLoader
+import os
+import numpy as np
+import torch
 from torch.utils.data import Dataset
-import math
-from apex import amp
-# from prefetch_generator import BackgroundGenerator
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch import cuda
 from tqdm import tqdm
 import glob
 from random import *
-from torch.cuda.amp import autocast as autocast
-# Distributed
-from torch.utils.data.distributed import DistributedSampler
 
 class Configue(object):
     label_list = ['<cls>', '<pad>', '<eos>', '<unk>', 'L', 'A', 'G', 'V', 'S', 'E', 'R', 'T', 'I', 'D', 'P', 'K', 'Q', 'N', 'F', 'Y', 'M', 'H', 'W', 'C', 'X', 'B', 'U', 'Z', 'O', '.', '-', '<null_1>', '<mask>']
     max_mask = 100 # max number of padding
 
-class AllDataset(Dataset):
+class getUniref50(Dataset):
     def __init__(self):
-        self.get_filename = self.get_txt_file()
-        self.data = self.process_filename()
+        self.uniref50_txt_location = "/home/guo/data/datacluster/uniref50/db/uniref50_256.txt"
+        # self.uniref50_txt_location = "/home/guo/data/datacluster/11.txt"
+        self.data = self.getSequenceData()
         self.len = len(self.data)
 
-    def get_txt_file(self):  # get filename
-        dir_file = []
-        s = "./data/"
-        # 改变当前路径到./data/
-        os.chdir(s)
-        files = glob.glob('*.txt')
-        for iter, filename in enumerate(files):
-            dir_file.append(filename)
-        return dir_file
+    # def get_file_location(self):  # get filename
+    #     dir_file = []
+    #     s = "/home/guo/data/datacluster/uniref50/db/uniref50.fasta"
+    #     # 改变当前路径到/home/guo/data/datacluster/uniref50/db
+    #     os.chdir(s)
+    #     files = glob.glob('*.txt')
+    #     for iter, filename in enumerate(files):
+    #         dir_file.append(filename)
+    #     return dir_file
 
-    def process_filename(self):
-        filename = self.get_filename
-        for i in tqdm(range(len(filename)), desc='load all data...(maybe a little slow)'):
-            data = np.loadtxt("../data/" + filename[i], dtype=list).tolist()  # type from array to list
-            if i == 0:
-                all = data
-            else:
-                all += data
-        return all
-
+    def getSequenceData(self):
+        filename_location = self.uniref50_txt_location
+        data = np.loadtxt(filename_location, dtype=list).tolist()  # type from array to list
+        return data
+    # 可以将高负载的操作放在这里，因为多进程时会并行调用这个函数，这样可以加速
     def __getitem__(self, index):
         return self.data[index]
 
@@ -89,7 +67,7 @@ class AllDataset(Dataset):
             for item in batch[i]:
                 label.append(Configue.label_list.index(item))  # 真实label
             # 设置mask的数量
-            mask_number = min(Configue.max_mask,max(1,int(len(batch[i])*0.15)))
+            mask_number = min(Configue.max_mask, max(1, int(len(batch[i])*0.15)))
             cand_mask_pos = [i for i, token in enumerate(batch[i])]  # [0,1,2,3,4..]
             shuffle(cand_mask_pos)
 
@@ -102,7 +80,7 @@ class AllDataset(Dataset):
                     label[pos] = index
 
             seq = torch.tensor(label)
-            tokens[i,1:len(batch[i]) + 1] = seq
+            tokens[i, 1:len(batch[i]) + 1] = seq
             tokens[i, len(batch[i]) + 1] = Configue.label_list.index("<eos>")
 
             all_mask_tokens.append(masked_tokens)

@@ -70,6 +70,9 @@ class ProteinBertModel(nn.Module):
         self.embed_tokens = nn.Embedding(
             self.alphabet_size, self.args.embed_dim, padding_idx=self.padding_idx
         )
+        self.embed_tokens_1 = nn.Embedding(
+            self.alphabet_size, 128, padding_idx=self.padding_idx
+        )
         self.layers = nn.ModuleList(
             [
                 TransformerLayer(
@@ -80,6 +83,51 @@ class ProteinBertModel(nn.Module):
                 for _ in range(self.args.layers)
             ]
         )
+        ################改
+        self.Linear_layer0 = nn.Linear(768, 512)
+        self.layer_block0 = TransformerLayer(
+                    # self.args.embed_dim, self.args.ffn_embed_dim, self.args.attention_heads,
+                    512, 2560, self.args.attention_heads,
+                    add_bias_kv=(self.model_version != 'ESM-1b'),
+                    use_esm1b_layer_norm=(self.model_version == 'ESM-1b'),
+                )
+        self.Linear_layer1 = nn.Linear(512, 256)
+        # self.layer_block1 = nn.ModuleList(
+        #     [
+        #         TransformerLayer(
+        #             # self.args.embed_dim, self.args.ffn_embed_dim, self.args.attention_heads,
+        #             256, 1280, self.args.attention_heads,
+        #             add_bias_kv=(self.model_version != 'ESM-1b'),
+        #             use_esm1b_layer_norm=(self.model_version == 'ESM-1b'),
+        #         )
+        #         for _ in range(self.args.layers)
+        #     ]
+        # )
+        self.layer_block1 = TransformerLayer(
+                    # self.args.embed_dim, self.args.ffn_embed_dim, self.args.attention_heads,
+                    256, 1280, self.args.attention_heads,
+                    add_bias_kv=(self.model_version != 'ESM-1b'),
+                    use_esm1b_layer_norm=(self.model_version == 'ESM-1b'),
+                )
+        self.Linear_layer2 = nn.Linear(256, 128)
+        # self.layer_block2 = nn.ModuleList(
+        #     [
+        #         TransformerLayer(
+        #             # self.args.embed_dim, self.args.ffn_embed_dim, self.args.attention_heads,
+        #             128, 1280, self.args.attention_heads,
+        #             add_bias_kv=(self.model_version != 'ESM-1b'),
+        #             use_esm1b_layer_norm=(self.model_version == 'ESM-1b'),
+        #         )
+        #         for _ in range(self.args.layers)
+        #     ]
+        # )
+        self.layer_block2 = TransformerLayer(
+                    # self.args.embed_dim, self.args.ffn_embed_dim, self.args.attention_heads,
+                    128, 1280, self.args.attention_heads,
+                    add_bias_kv=(self.model_version != 'ESM-1b'),
+                    use_esm1b_layer_norm=(self.model_version == 'ESM-1b'),
+                )
+        self.Linear_layer3 = nn.Linear(128, 64)
 
         self.contact_head = ContactPredictionHead(
             self.args.layers * self.args.attention_heads,
@@ -94,10 +142,17 @@ class ProteinBertModel(nn.Module):
         self.embed_positions = LearnedPositionalEmbedding(self.args.max_positions, self.args.embed_dim, self.padding_idx)
         self.emb_layer_norm_before = ESM1bLayerNorm(self.args.embed_dim)
         self.emb_layer_norm_after = ESM1bLayerNorm(self.args.embed_dim)
+        self.emb_layer_norm_after1 = ESM1bLayerNorm(128)
         self.lm_head = RobertaLMHead(
             embed_dim=self.args.embed_dim,
             output_dim=self.alphabet_size,
             weight=self.embed_tokens.weight
+        )
+        self.lm_head1 = RobertaLMHead(
+            # embed_dim=self.args.embed_dim,
+            embed_dim=128,
+            output_dim=self.alphabet_size,
+            weight=self.embed_tokens_1.weight
         )
 
     def _init_submodules_esm1(self):
@@ -151,6 +206,7 @@ class ProteinBertModel(nn.Module):
         if not padding_mask.any():
             padding_mask = None
 
+        # block块
         for layer_idx, layer in enumerate(self.layers):
             x, attn = layer(x, self_attn_padding_mask=padding_mask, need_head_weights=need_head_weights)
             if (layer_idx + 1) in repr_layers:
@@ -158,9 +214,17 @@ class ProteinBertModel(nn.Module):
             if need_head_weights:
                 # (H, B, T, T) => (B, H, T, T)
                 attn_weights.append(attn.transpose(1, 0))
+        x = self.Linear_layer0(x)
+        x, attn = self.layer_block0(x, self_attn_padding_mask=padding_mask, need_head_weights=need_head_weights)
+        x = self.Linear_layer1(x)
+        x, attn = self.layer_block1(x, self_attn_padding_mask=padding_mask, need_head_weights=need_head_weights)
+        x = self.Linear_layer2(x)
+        x, attn = self.layer_block2(x, self_attn_padding_mask=padding_mask, need_head_weights=need_head_weights)
+        # x = self.Linear_layer3(x)
 
         if self.model_version == 'ESM-1b':
-            x = self.emb_layer_norm_after(x)
+            # x = self.emb_layer_norm_after(x)
+            x = self.emb_layer_norm_after1(x)
             x = x.transpose(0, 1) # (T, B, E) => (B, T, E)
 
             # last hidden representation should have layer norm applied
@@ -168,7 +232,7 @@ class ProteinBertModel(nn.Module):
                 hidden_representations[layer_idx + 1] = x
             '''x3 = x * (1 - padding_mask.unsqueeze(-1).type_as(x))
             print(x3.size())'''
-            x = self.lm_head(x)
+            x = self.lm_head1(x)
         else:
             x = F.linear(x, self.embed_out, bias=self.embed_out_bias)
             x = x.transpose(0, 1) # (T, B, E) => (B, T, E)
@@ -413,3 +477,26 @@ class MSATransformer(nn.Module):
         for module in self.modules():
             if isinstance(module, (RowSelfAttention, ColumnSelfAttention)):
                 module.max_tokens_per_msa = value
+
+# class SmallSampleContainProteinBertModel(nn.Module):
+#     def __init__(self, model):
+#         super(SmallSampleContainProteinBertModel, self).__init__()
+#
+#         self.Linear_layer0 = nn.Linear(768, 384)
+#         self.Linear_layer1 = nn.Linear(384, 192)
+#         self.Linear_layer2 = nn.Linear(192, 96)
+#         self.Linear_layer3 = nn.Linear(96, 48)
+#
+#     def forward(self, x):
+#         x = self.layer(x)
+#         x = self.Linear_layer0(x)
+#         x = self.layer(x)
+#         x = self.Linear_layer1(x)
+#         x = self.layer(x)
+#         x = self.Linear_layer2(x)
+#         x = self.layer(x)
+#         x = self.Linear_layer3(x)
+#         return x
+#
+
+

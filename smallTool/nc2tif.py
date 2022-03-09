@@ -13,8 +13,9 @@ OutPath = r'D:\xx'
 
 a = Dataset("CHAP_PM2.5_D1K_20170101_V4.nc")
 print(a.variables.keys())
-
+print("home")
 for i in NClist:
+    print("a")
     nc_obj = Dataset(i)
     fname = os.path.basename(i).split('.nc')[0]
     dictk = [v for v in nc_obj.variables.keys()]
